@@ -1,55 +1,60 @@
+# Content Points
+# * Simple Endpoint
+# * Automatic Documentation
+# * Data Validation (Path Parameters, Query Parameters, Request Body)
+# * Query Parameters required or optional
+# * Enumerated parameters
+# * POST Endpoint with request body documentation & validation
+# * Browser Cookies
+# * Request Headers
+# * Typed Response
+# * Explicit Status Codes
+# * Throw HTTP Errors
+# * Background Tasks
+# * Cross Origin Requests (CORS)
+
 import time
 
 from enum import Enum
 from typing import List
 from typing import Optional
+from urllib import response
 
 import uvicorn
 from fastapi import Cookie, FastAPI, Header, status, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+
 from pydantic import BaseModel, Field
 
 
-def write_notification(email, message):
-    print("Sending email notification in background..")
-    time.sleep(5)
-    print(f"Email sent to {email} with message: {message} ")
+class Notification(BaseModel):
+    email: str
+    notification_type: int
 
 
-origins = [
-    "http://localhost.tiangolo.com",
-    "https://localhost.tiangolo.com",
-    "http://localhost",
-    "http://localhost:8080",
-]
-
-
-class Cart(BaseModel):
-    items: List[str]
-    totalPrice: int
-    promotionsAttached: bool
-
-
-class Course(str, Enum):
-    CHEMISTRY = "chemistry"
-    PHYSICS = "physics"
+class Department(str, Enum):
     MATH = "math"
+    ENGLISH = "english"
+    CHEMISTRY = "chemistry"
+    COMPUTER_SCIENCE = "computer_science"
 
 
-class CourseEntity(BaseModel):
-    id: int
-    name: str
-    description: str = Field(
-        min_length=5, description="Proper description of the course materials!"
+class Employee(BaseModel):
+    id: int = Field(description="Employee ID")
+    department: Department = Field(
+        description="The department the employee belongs to.",
     )
-    language: Optional[str]
-    rating: int
-    tags: List[str] = Field(default=["public"])
+    age: int = Field(description="The age of the employee")
+    gender: str = Field(max_length=1, description="The gender of the employee")
 
+
+fake_employees_db = []
 
 app = FastAPI(debug=True)
 
-#! Configure CORS to allow cross origin requests
+origins = [
+    "http://localhost:5000",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -59,92 +64,44 @@ app.add_middleware(
 )
 
 
-#! Automatic conversion
-#! Data validation when typed
-@app.get("/items/{item_id}")
-async def read_item(item_id: int):
-    return {"item_id": item_id}
+@app.get("/status")
+async def check_status():
+    return "Hello World"
 
 
-#! Enumerated path parameters
-#! Query parameters [Optional & Required]
-#! Implicit enforcement
-#! Talk about Pydantic Field for extra validation
-@app.get("/courses/{course}")
-async def get_course(course: Course, language: str, minRating: int = 0):
-    if course == Course.CHEMISTRY:
-        return {
-            "description": "Let's learn about chemicals!",
-            "language": language,
-            "minRating": minRating,
-        }
-
-    if course == Course.PHYSICS:
-        return {
-            "description": "Let's learn about physical matters!",
-            "language": language,
-            "minRating": minRating,
-        }
-
-    if course == Course.MATH:
-        return {
-            "description": "Let's learn about numbers!",
-            "language": language,
-            "minRating": minRating,
-        }
+@app.get(
+    "/employees/{employee_id}", response_model=Employee, status_code=status.HTTP_200_OK
+)
+async def get_employees(
+    employee_id: int, age: int, department: Department, gender: str = None
+):
+    return [{"id": 1, "name": "Bob"}, {"id": 2, "name": "Mike"}]
 
 
-#! Automatically convert JSON --> Python and vice versa
-#! Validate request body and send errors back
-#! Add models in Swagger
-@app.post("/courses/")
-async def create_course(course: CourseEntity):
-    print("Course created successfully")
-    return course
+@app.post("/employees", response_model=Employee, status_code=status.HTTP_201_CREATED)
+async def create_employee(employee: Employee):
+    print(employee)
+    return employee
 
 
-#! Reading browser cookies!
-#! Reading request headers
-@app.get("/students/")
-async def get_students(
+def send_notification(email: str):
+    time.sleep(10)
+    print(f"Sending email to {email}")
+
+
+@app.post("/send_email")
+async def send_email(
+    background_tasks: BackgroundTasks,
+    notification_payload: Notification,
     token: Optional[str] = Cookie(None),
-    ads_id: Optional[str] = Cookie(None),
     user_agent: Optional[str] = Header(None),
 ):
-    return {
-        "cookie_token_found": token,
-        "ads_id_in_browser": ads_id,
-        "incoming_user_agent": user_agent,
-    }
+    if notification_payload.email in ["fake_email"]:
+        raise HTTPException(status_code=400, detail="Fake email detected")
+
+    background_tasks.add_task(send_notification, notification_payload.email)
+    return {"cookie_received": token, "user_agent_from_header": user_agent}
 
 
-#! Typed response [+ Documentation]
-#! Automatic conversions and validations
-#! Talk about explicit status codes
-@app.get("/current_cart", response_model=Cart, status_code=status.HTTP_200_OK)
-async def get_cart():
-    return Cart(
-        items=["shampoo", "chocolates", "soap"],
-        totalPrice=1500,
-        promotionsAttached=False,
-    )
-
-
-#! Throw explicit HTTP errors
-@app.get("/flights/{flight_id}")
-async def get_flights(flight_id: int):
-    if flight_id not in [1, 2, 3]:
-        raise HTTPException(status_code=404, detail="Flight not found")
-    else:
-        return {"message": "Fly high!"}
-
-
-#! Kick off background tasks
-@app.get("/send_email/{email}")
-async def send_email(email: str, background_tasks: BackgroundTasks):
-    background_tasks.add_task(write_notification, email, message="Hellooo world!!")
-
-
-#! Or just run uvicorn main:app --host 0.0.0.0 --port 80 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
